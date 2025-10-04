@@ -11,8 +11,7 @@ class RAGChain:
     """Main RAG pipeline orchestrator"""
     
     def __init__(self, config_path: str = "configs/base.yaml"):
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = self._load_config(config_path)
         
         self.retriever = HybridRetriever(config_path)
         self.prompt_manager = PromptManager(config_path)
@@ -20,6 +19,29 @@ class RAGChain:
         
         self.prompt_fanning_enabled = self.config.get('prompt_fanning', {}).get('enabled', False)
         self.max_subqueries = self.config.get('prompt_fanning', {}).get('max_subqueries', 3)
+    
+    def _load_config(self, config_path: str) -> Dict[str, Any]:
+        """Load configuration with support for extends"""
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Handle extends directive
+        if 'extends' in config:
+            base_path = f"configs/{config['extends']}"
+            base_config = self._load_config(base_path)
+            
+            # Merge configs (child overrides parent)
+            merged_config = base_config.copy()
+            for key, value in config.items():
+                if key != 'extends':
+                    if isinstance(value, dict) and key in merged_config and isinstance(merged_config[key], dict):
+                        merged_config[key] = {**merged_config[key], **value}
+                    else:
+                        merged_config[key] = value
+            
+            return merged_config
+        
+        return config
         
     def build_index(self, chunks: List[Dict[str, Any]]):
         """Build retrieval index from chunks"""

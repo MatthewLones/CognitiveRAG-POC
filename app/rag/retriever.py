@@ -10,8 +10,7 @@ class HybridRetriever:
     """Implements hybrid retrieval with BM25 + Dense embeddings + Re-ranking"""
     
     def __init__(self, config_path: str = "configs/base.yaml"):
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = self._load_config(config_path)
         
         self.top_k = self.config['retrieval']['top_k']
         self.rerank_top_k = self.config['retrieval']['rerank_top_k']
@@ -22,6 +21,29 @@ class HybridRetriever:
         self.chunks = []
         self.dense_index = None
         self.bm25_index = None
+    
+    def _load_config(self, config_path: str) -> Dict[str, Any]:
+        """Load configuration with support for extends"""
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Handle extends directive
+        if 'extends' in config:
+            base_path = f"configs/{config['extends']}"
+            base_config = self._load_config(base_path)
+            
+            # Merge configs (child overrides parent)
+            merged_config = base_config.copy()
+            for key, value in config.items():
+                if key != 'extends':
+                    if isinstance(value, dict) and key in merged_config and isinstance(merged_config[key], dict):
+                        merged_config[key] = {**merged_config[key], **value}
+                    else:
+                        merged_config[key] = value
+            
+            return merged_config
+        
+        return config
         
     def build_index(self, chunks: List[Dict[str, Any]]):
         """Build both BM25 and dense vector indices"""
@@ -63,21 +85,34 @@ class HybridRetriever:
         try:
             import faiss
             
-            # Extract embeddings
+            # Extract embeddings and determine dimension
             embeddings = []
+            embedding_dim = None
+            
             for chunk in self.chunks:
-                if "embedding" in chunk:
-                    embeddings.append(chunk["embedding"])
+                if "embedding" in chunk and chunk["embedding"]:
+                    embedding = chunk["embedding"]
+                    embeddings.append(embedding)
+                    if embedding_dim is None:
+                        embedding_dim = len(embedding)
                 else:
-                    # Create zero embedding if missing
-                    embeddings.append([0.0] * 1536)  # Default dimension
+                    # Skip chunks without embeddings for now
+                    continue
+            
+            if not embeddings:
+                print("No embeddings found in chunks")
+                self.dense_index = None
+                return
+                
+            # Use actual embedding dimension
+            if embedding_dim is None:
+                embedding_dim = 384  # Fallback for all-MiniLM-L6-v2
             
             # Convert to numpy array
             embeddings = np.array(embeddings).astype('float32')
             
-            # Build FAISS index
-            dimension = embeddings.shape[1]
-            self.dense_index = faiss.IndexFlatIP(dimension)  # Inner product for cosine similarity
+            # Build FAISS index with dynamic dimension
+            self.dense_index = faiss.IndexFlatIP(embedding_dim)  # Inner product for cosine similarity
             
             # Normalize embeddings for cosine similarity
             faiss.normalize_L2(embeddings)

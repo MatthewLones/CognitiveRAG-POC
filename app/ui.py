@@ -116,38 +116,68 @@ with col1:
         if query.strip():
             with st.spinner("Processing query..."):
                 try:
-                    # TODO: Replace with actual API call
-                    response = {
-                        "answer": "This is a placeholder response. The RAG pipeline will be implemented in the next steps.",
-                        "citations": [],
-                        "confidence": 0.0,
-                        "groundedness": "ungrounded",
-                        "metadata": {"config": selected_config, "query": query}
+                    # Make API call to FastAPI backend
+                    api_url = "http://localhost:8000"
+                    
+                    # Check if API is running
+                    try:
+                        health_response = requests.get(f"{api_url}/health", timeout=5)
+                        if health_response.status_code != 200:
+                            st.error("FastAPI server is not running. Please start it with: `uvicorn app.api:app --reload`")
+                            st.stop()
+                    except requests.exceptions.RequestException:
+                        st.error("Cannot connect to FastAPI server. Please start it with: `uvicorn app.api:app --reload`")
+                        st.stop()
+                    
+                    # Make the query request
+                    query_data = {
+                        "query": query,
+                        "config": selected_config,
+                        "max_results": max_results
                     }
                     
-                    # Display results
-                    st.subheader("Answer")
-                    st.write(response["answer"])
+                    response = requests.post(
+                        f"{api_url}/query",
+                        json=query_data,
+                        timeout=60  # Allow time for processing
+                    )
                     
-                    # Groundedness badge
-                    groundedness_class = response["groundedness"].replace("_", "-")
-                    st.markdown(f"""
-                    <div class="groundedness-badge {groundedness_class}">
-                        {response["groundedness"].title()}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Citations
-                    if response["citations"]:
-                        with st.expander("Citations"):
-                            for i, citation in enumerate(response["citations"]):
-                                st.markdown(f"**{i+1}.** {citation.get('text', '')[:200]}...")
-                    
-                    # Debug info
-                    if show_debug:
-                        with st.expander("Debug Information"):
-                            st.json(response["metadata"])
+                    if response.status_code == 200:
+                        result = response.json()
+                        
+                        # Display results
+                        st.subheader("Answer")
+                        st.write(result["answer"])
+                        
+                        # Groundedness badge
+                        groundedness_class = result["groundedness"].replace("_", "-")
+                        st.markdown(f"""
+                        <div class="groundedness-badge {groundedness_class}">
+                            {result["groundedness"].title()}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Confidence score
+                        if result["confidence"] > 0:
+                            st.metric("Confidence Score", f"{result['confidence']:.2f}")
+                        
+                        # Citations
+                        if result["citations"]:
+                            with st.expander(f"Citations ({len(result['citations'])})"):
+                                for i, citation in enumerate(result["citations"]):
+                                    st.markdown(f"**{i+1}.** {citation.get('text', '')[:200]}...")
+                                    if citation.get('source'):
+                                        st.caption(f"Source: {citation['source']}")
+                        
+                        # Debug info
+                        if show_debug:
+                            with st.expander("Debug Information"):
+                                st.json(result["metadata"])
+                    else:
+                        st.error(f"API Error: {response.status_code} - {response.text}")
                             
+                except requests.exceptions.Timeout:
+                    st.error("Query timed out. The server might be processing a large document.")
                 except Exception as e:
                     st.error(f"Error processing query: {str(e)}")
         else:

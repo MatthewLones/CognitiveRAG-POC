@@ -9,14 +9,36 @@ class GuardrailManager:
     """Manages answerability checks, self-verification, and safety measures"""
     
     def __init__(self, config_path: str = "configs/base.yaml"):
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = self._load_config(config_path)
         
         self.answerability_threshold = self.config.get('guardrails', {}).get('answerability_threshold', 0.7)
         self.self_check_enabled = self.config.get('guardrails', {}).get('self_check_enabled', False)
         self.max_citations = self.config.get('guardrails', {}).get('max_citations', 5)
         
         self.llm_model = self.config['models']['llm_model']
+    
+    def _load_config(self, config_path: str) -> Dict[str, Any]:
+        """Load configuration with support for extends"""
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Handle extends directive
+        if 'extends' in config:
+            base_path = f"configs/{config['extends']}"
+            base_config = self._load_config(base_path)
+            
+            # Merge configs (child overrides parent)
+            merged_config = base_config.copy()
+            for key, value in config.items():
+                if key != 'extends':
+                    if isinstance(value, dict) and key in merged_config and isinstance(merged_config[key], dict):
+                        merged_config[key] = {**merged_config[key], **value}
+                    else:
+                        merged_config[key] = value
+            
+            return merged_config
+        
+        return config
     
     def check_answerability(self, question: str, chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
         """

@@ -10,12 +10,50 @@ class DocumentIngester:
     """Handles document loading, chunking, and embedding storage"""
     
     def __init__(self, config_path: str = "configs/base.yaml"):
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = self._load_config(config_path)
         
         self.chunk_size = self.config['chunking']['chunk_size']
         self.chunk_overlap = self.config['chunking']['chunk_overlap']
         self.separators = self.config['chunking']['separators']
+        self._embedding_model = None  # Cache the model
+    
+    def _load_config(self, config_path: str) -> Dict[str, Any]:
+        """Load configuration with support for extends"""
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Handle extends directive
+        if 'extends' in config:
+            base_path = f"configs/{config['extends']}"
+            base_config = self._load_config(base_path)
+            
+            # Merge configs (child overrides parent)
+            merged_config = base_config.copy()
+            for key, value in config.items():
+                if key != 'extends':
+                    if isinstance(value, dict) and key in merged_config and isinstance(merged_config[key], dict):
+                        merged_config[key] = {**merged_config[key], **value}
+                    else:
+                        merged_config[key] = value
+            
+            return merged_config
+        
+        return config
+    
+    def _get_embedding_model(self):
+        """Get embedding model, loading it lazily if needed"""
+        if self._embedding_model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                model_name = self.config['models']['embedding_model']
+                print(f"Loading embedding model: {model_name}")
+                self._embedding_model = SentenceTransformer(model_name)
+                print("Embedding model loaded successfully")
+            except ImportError:
+                raise ImportError("sentence-transformers not installed. Install with: pip install sentence-transformers")
+            except Exception as e:
+                raise Exception(f"Error loading embedding model: {e}")
+        return self._embedding_model
     
     def load_documents(self, data_dir: str = "data") -> List[Dict[str, Any]]:
         """
@@ -185,11 +223,8 @@ class DocumentIngester:
         Create embeddings for chunks
         """
         try:
-            from sentence_transformers import SentenceTransformer
-            
-            # Load embedding model
-            model_name = self.config['models']['embedding_model']
-            model = SentenceTransformer(model_name)
+            # Get cached model (loads lazily)
+            model = self._get_embedding_model()
             
             # Extract texts
             texts = [chunk["content"] for chunk in chunks]
@@ -204,9 +239,6 @@ class DocumentIngester:
             print(f"Created embeddings for {len(chunks)} chunks")
             return chunks
             
-        except ImportError:
-            print("sentence-transformers not installed. Install with: pip install sentence-transformers")
-            return chunks
         except Exception as e:
             print(f"Error creating embeddings: {e}")
             return chunks

@@ -14,7 +14,7 @@
 ### Hour 0.5 → 1.5: Ingest + Baseline Naïve RAG
 - Loaders: PDFs/MD/HTML with metadata extraction
 - Chunking: Recursive 400-800 tokens, 60-100 token overlap
-- Embeddings: text-embedding-3-large, persist vectors
+- Embeddings: all-MiniLM-L6-v2, persist vectors
 - Baseline: Top-k dense retrieval → "stuff" prompt with citations
 
 ### Hour 1.5 → 2.5: RAG++ Enhancements
