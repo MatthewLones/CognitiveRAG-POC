@@ -1,0 +1,28 @@
+# Naïve RAG configuration (baseline)
+extends: base.yaml
+
+# Simplified retrieval
+retrieval:
+  top_k: 5
+  rerank_top_k: 5
+  fusion_method: "dense_only"  # Only dense retrieval
+  bm25_weight: 0.0
+  dense_weight: 1.0
+
+# Disable advanced features
+prompt_fanning:
+  enabled: false
+
+guardrails:
+  answerability_threshold: 0.5
+  self_check_enabled: false
+
+# Simple chunking
+chunking:
+  chunk_size: 400
+  chunk_overlap: 50
+
+# Basic performance settings
+performance:
+  max_tokens: 2000
+  temperature: 0.0

@@ -1,0 +1,32 @@
+# Enhanced RAG configuration (all improvements)
+extends: base.yaml
+
+# Full hybrid retrieval
+retrieval:
+  top_k: 15
+  rerank_top_k: 5
+  fusion_method: "rrf"
+  bm25_weight: 0.4
+  dense_weight: 0.6
+
+# Enable all advanced features
+prompt_fanning:
+  enabled: true
+  max_subqueries: 4
+  subquery_types: ["definition", "examples", "latest_info", "numbers_dates"]
+
+# Strong guardrails
+guardrails:
+  answerability_threshold: 0.75
+  self_check_enabled: true
+  max_citations: 7
+
+# Optimized chunking
+chunking:
+  chunk_size: 800
+  chunk_overlap: 100
+
+# Enhanced performance
+performance:
+  max_tokens: 6000
+  temperature: 0.1

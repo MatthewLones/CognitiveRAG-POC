@@ -1,0 +1,300 @@
+"""
+Hybrid retrieval system for Cognitive RAG POC
+"""
+import numpy as np
+from typing import List, Dict, Any, Tuple
+import yaml
+from pathlib import Path
+
+class HybridRetriever:
+    """Implements hybrid retrieval with BM25 + Dense embeddings + Re-ranking"""
+    
+    def __init__(self, config_path: str = "configs/base.yaml"):
+        with open(config_path, 'r') as f:
+            self.config = yaml.safe_load(f)
+        
+        self.top_k = self.config['retrieval']['top_k']
+        self.rerank_top_k = self.config['retrieval']['rerank_top_k']
+        self.fusion_method = self.config['retrieval']['fusion_method']
+        self.bm25_weight = self.config['retrieval']['bm25_weight']
+        self.dense_weight = self.config['retrieval']['dense_weight']
+        
+        self.chunks = []
+        self.dense_index = None
+        self.bm25_index = None
+        
+    def build_index(self, chunks: List[Dict[str, Any]]):
+        """Build both BM25 and dense vector indices"""
+        self.chunks = chunks
+        
+        # Build BM25 index
+        self._build_bm25_index()
+        
+        # Build dense vector index
+        self._build_dense_index()
+        
+        print(f"Built indices for {len(chunks)} chunks")
+    
+    def _build_bm25_index(self):
+        """Build BM25 sparse retrieval index"""
+        try:
+            from rank_bm25 import BM25Okapi
+            
+            # Extract texts for BM25
+            texts = [chunk["content"] for chunk in self.chunks]
+            
+            # Tokenize texts
+            tokenized_texts = [text.split() for text in texts]
+            
+            # Build BM25 index
+            self.bm25_index = BM25Okapi(tokenized_texts)
+            
+            print("BM25 index built successfully")
+            
+        except ImportError:
+            print("rank_bm25 not installed. Install with: pip install rank-bm25")
+            self.bm25_index = None
+        except Exception as e:
+            print(f"Error building BM25 index: {e}")
+            self.bm25_index = None
+    
+    def _build_dense_index(self):
+        """Build dense vector index using FAISS"""
+        try:
+            import faiss
+            
+            # Extract embeddings
+            embeddings = []
+            for chunk in self.chunks:
+                if "embedding" in chunk:
+                    embeddings.append(chunk["embedding"])
+                else:
+                    # Create zero embedding if missing
+                    embeddings.append([0.0] * 1536)  # Default dimension
+            
+            # Convert to numpy array
+            embeddings = np.array(embeddings).astype('float32')
+            
+            # Build FAISS index
+            dimension = embeddings.shape[1]
+            self.dense_index = faiss.IndexFlatIP(dimension)  # Inner product for cosine similarity
+            
+            # Normalize embeddings for cosine similarity
+            faiss.normalize_L2(embeddings)
+            
+            # Add embeddings to index
+            self.dense_index.add(embeddings)
+            
+            print("Dense vector index built successfully")
+            
+        except ImportError:
+            print("faiss-cpu not installed. Install with: pip install faiss-cpu")
+            self.dense_index = None
+        except Exception as e:
+            print(f"Error building dense index: {e}")
+            self.dense_index = None
+    
+    def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
+        """
+        Perform hybrid retrieval
+        """
+        if top_k is None:
+            top_k = self.top_k
+        
+        # Get BM25 results
+        bm25_results = self._bm25_search(query, top_k)
+        
+        # Get dense results
+        dense_results = self._dense_search(query, top_k)
+        
+        # Fuse results
+        fused_results = self._fuse_results(bm25_results, dense_results, top_k)
+        
+        return fused_results
+    
+    def _bm25_search(self, query: str, top_k: int) -> List[Tuple[int, float]]:
+        """Perform BM25 search"""
+        if self.bm25_index is None:
+            return []
+        
+        try:
+            # Tokenize query
+            query_tokens = query.split()
+            
+            # Get BM25 scores
+            scores = self.bm25_index.get_scores(query_tokens)
+            
+            # Get top-k results
+            top_indices = np.argsort(scores)[::-1][:top_k]
+            
+            return [(idx, scores[idx]) for idx in top_indices if scores[idx] > 0]
+            
+        except Exception as e:
+            print(f"Error in BM25 search: {e}")
+            return []
+    
+    def _dense_search(self, query: str, top_k: int) -> List[Tuple[int, float]]:
+        """Perform dense vector search"""
+        if self.dense_index is None:
+            return []
+        
+        try:
+            from sentence_transformers import SentenceTransformer
+            
+            # Load embedding model
+            model_name = self.config['models']['embedding_model']
+            model = SentenceTransformer(model_name)
+            
+            # Create query embedding
+            query_embedding = model.encode([query])
+            
+            # Normalize for cosine similarity
+            faiss.normalize_L2(query_embedding)
+            
+            # Search
+            scores, indices = self.dense_index.search(query_embedding, top_k)
+            
+            # Return results
+            return [(idx, float(score)) for idx, score in zip(indices[0], scores[0])]
+            
+        except Exception as e:
+            print(f"Error in dense search: {e}")
+            return []
+    
+    def _fuse_results(self, bm25_results: List[Tuple[int, float]], 
+                     dense_results: List[Tuple[int, float]], 
+                     top_k: int) -> List[Dict[str, Any]]:
+        """Fuse BM25 and dense results"""
+        
+        if self.fusion_method == "dense_only":
+            # Return only dense results
+            results = dense_results
+        elif self.fusion_method == "bm25_only":
+            # Return only BM25 results
+            results = bm25_results
+        else:
+            # Reciprocal Rank Fusion (RRF)
+            results = self._reciprocal_rank_fusion(bm25_results, dense_results)
+        
+        # Convert to final format
+        final_results = []
+        for idx, score in results[:top_k]:
+            if idx < len(self.chunks):
+                chunk = self.chunks[idx].copy()
+                chunk["retrieval_score"] = score
+                final_results.append(chunk)
+        
+        return final_results
+    
+    def _reciprocal_rank_fusion(self, bm25_results: List[Tuple[int, float]], 
+                               dense_results: List[Tuple[int, float]], 
+                               k: int = 60) -> List[Tuple[int, float]]:
+        """Implement Reciprocal Rank Fusion"""
+        
+        # Create score dictionaries
+        bm25_scores = {idx: score for idx, score in bm25_results}
+        dense_scores = {idx: score for idx, score in dense_results}
+        
+        # Get all unique indices
+        all_indices = set(bm25_scores.keys()) | set(dense_scores.keys())
+        
+        # Calculate RRF scores
+        rrf_scores = {}
+        for idx in all_indices:
+            rrf_score = 0.0
+            
+            # BM25 contribution
+            if idx in bm25_scores:
+                bm25_rank = next(i for i, (iidx, _) in enumerate(bm25_results) if iidx == idx) + 1
+                rrf_score += self.bm25_weight / (k + bm25_rank)
+            
+            # Dense contribution
+            if idx in dense_scores:
+                dense_rank = next(i for i, (iidx, _) in enumerate(dense_results) if iidx == idx) + 1
+                rrf_score += self.dense_weight / (k + dense_rank)
+            
+            rrf_scores[idx] = rrf_score
+        
+        # Sort by RRF score
+        sorted_results = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        return sorted_results
+    
+    def rerank(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Re-rank chunks using LLM or cross-encoder
+        """
+        if len(chunks) <= self.rerank_top_k:
+            return chunks
+        
+        try:
+            # Use LLM for re-ranking
+            reranked_chunks = self._llm_rerank(query, chunks)
+            return reranked_chunks[:self.rerank_top_k]
+            
+        except Exception as e:
+            print(f"Error in re-ranking: {e}")
+            return chunks[:self.rerank_top_k]
+    
+    def _llm_rerank(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Re-rank using LLM"""
+        try:
+            import openai
+            
+            # Create prompt for re-ranking
+            prompt = f"""You are a document retrieval expert. Given a query and a list of document chunks, rank them by relevance to the query.
+
+Query: {query}
+
+Document chunks:
+"""
+            
+            for i, chunk in enumerate(chunks):
+                prompt += f"\n{i+1}. {chunk['content'][:200]}...\n"
+            
+            prompt += f"""
+Please rank these {len(chunks)} chunks by relevance to the query. Return only the numbers in order of relevance, separated by commas.
+
+Example: 3,1,5,2,4
+"""
+            
+            # Call LLM
+            response = openai.chat.completions.create(
+                model=self.config['models']['llm_model'],
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=100
+            )
+            
+            # Parse response
+            ranking_text = response.choices[0].message.content.strip()
+            ranking = [int(x.strip()) - 1 for x in ranking_text.split(',')]
+            
+            # Reorder chunks
+            reranked = [chunks[i] for i in ranking if i < len(chunks)]
+            
+            return reranked
+            
+        except Exception as e:
+            print(f"Error in LLM re-ranking: {e}")
+            return chunks
+
+# Example usage
+if __name__ == "__main__":
+    retriever = HybridRetriever()
+    
+    # Example chunks (would normally come from ingest.py)
+    example_chunks = [
+        {
+            "content": "The Well-Architected Framework provides guidance to help you build secure, high-performing, resilient, and efficient infrastructure for your applications.",
+            "metadata": {"source": "test.pdf", "chunk_id": "0"},
+            "embedding": [0.1] * 1536
+        }
+    ]
+    
+    # Build index
+    retriever.build_index(example_chunks)
+    
+    # Retrieve
+    results = retriever.retrieve("What is the Well-Architected Framework?")
+    print(f"Retrieved {len(results)} chunks")
