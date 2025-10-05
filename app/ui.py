@@ -1,6 +1,10 @@
 """
 Streamlit UI for Cognitive RAG POC
 """
+import os
+# Set tokenizers parallelism to avoid warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import streamlit as st
 import requests
 import json

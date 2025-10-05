@@ -10,6 +10,9 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Set tokenizers parallelism to avoid warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # Load environment variables from .env file
 load_dotenv()
 

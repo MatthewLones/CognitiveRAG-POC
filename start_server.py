@@ -10,6 +10,9 @@ import sys
 import os
 from pathlib import Path
 
+# Set tokenizers parallelism to avoid warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 def check_data_directory():
     """Check if data directory has documents"""
