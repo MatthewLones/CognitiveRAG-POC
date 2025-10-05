@@ -26,7 +26,7 @@ rag_chain = None
 
 class QueryRequest(BaseModel):
     query: str
-    config: str = "naive_plus"
+    config: str = "naive"
     max_results: int = 5
 
 class QueryResponse(BaseModel):
@@ -109,11 +109,19 @@ async def query_documents(request: QueryRequest):
         # Create a new RAG chain instance with the requested config
         query_rag_chain = RAGChain(config_path)
         
-        # Copy the index from the global instance
-        query_rag_chain.retriever = rag_chain.retriever
+        # Copy the index data from the global instance but keep the new config
         query_rag_chain.retriever.chunks = rag_chain.retriever.chunks
         query_rag_chain.retriever.dense_index = rag_chain.retriever.dense_index
         query_rag_chain.retriever.bm25_index = rag_chain.retriever.bm25_index
+        
+        # Update the retriever configuration to match the requested config
+        # This is important for fusion_method, weights, etc.
+        query_rag_chain.retriever.config = query_rag_chain.config
+        query_rag_chain.retriever.top_k = query_rag_chain.config['retrieval']['top_k']
+        query_rag_chain.retriever.rerank_top_k = query_rag_chain.config['retrieval']['rerank_top_k']
+        query_rag_chain.retriever.fusion_method = query_rag_chain.config['retrieval']['fusion_method']
+        query_rag_chain.retriever.bm25_weight = query_rag_chain.config['retrieval']['bm25_weight']
+        query_rag_chain.retriever.dense_weight = query_rag_chain.config['retrieval']['dense_weight']
         
         # Process the query
         result = query_rag_chain.query(request.query)

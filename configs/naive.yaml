@@ -4,7 +4,7 @@ extends: base.yaml
 # Simplified retrieval
 retrieval:
   top_k: 5
-  rerank_top_k: 5
+  rerank_top_k: 5  # Same as top_k to disable reranking
   fusion_method: "dense_only"  # Only dense retrieval
   bm25_weight: 0.0
   dense_weight: 1.0

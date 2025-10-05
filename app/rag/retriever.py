@@ -54,8 +54,12 @@ class HybridRetriever:
         """Build both BM25 and dense vector indices"""
         self.chunks = chunks
         
-        # Build BM25 index
-        self._build_bm25_index()
+        # Build BM25 index only if needed
+        if self.fusion_method != "dense_only":
+            self._build_bm25_index()
+        else:
+            print("Skipping BM25 index build (dense_only mode)")
+            self.bm25_index = None
         
         # Build dense vector index
         self._build_dense_index()
@@ -176,9 +180,12 @@ class HybridRetriever:
         
         print(f"Retriever: Retrieving with top_k={top_k}, fusion_method={self.fusion_method}")
         
-        # Get BM25 results
-        bm25_results = self._bm25_search(query, top_k)
-        print(f"Retriever: BM25 returned {len(bm25_results)} results")
+        # Get BM25 results only if needed
+        if self.fusion_method != "dense_only":
+            bm25_results = self._bm25_search(query, top_k)
+            print(f"Retriever: BM25 returned {len(bm25_results)} results")
+        else:
+            bm25_results = []
         
         # Get dense results
         dense_results = self._dense_search(query, top_k)
@@ -193,7 +200,8 @@ class HybridRetriever:
             print(f"⚠️  WARNING: Expected {top_k} chunks but only got {len(fused_results)}")
             print(f"   This could be due to:")
             print(f"   - Index only contains {len(self.chunks)} total chunks")
-            print(f"   - BM25 index issues: {len(bm25_results)} results")
+            if self.fusion_method != "dense_only":
+                print(f"   - BM25 index issues: {len(bm25_results)} results")
             print(f"   - Dense index issues: {len(dense_results)} results")
         else:
             print(f"✅ Successfully retrieved {len(fused_results)} chunks (expected {top_k})")
@@ -314,7 +322,11 @@ class HybridRetriever:
         """
         Re-rank chunks using LLM or cross-encoder
         """
-        print(f"Reranking: {len(chunks)} chunks, rerank_top_k: {self.rerank_top_k}")
+        print(f"Reranking: {len(chunks)} chunks, top_k: {self.top_k}, rerank_top_k: {self.rerank_top_k}")
+        
+        # Skip reranking if rerank_top_k equals top_k (naive RAG configuration)
+        if self.rerank_top_k == self.top_k:
+            return chunks[:self.rerank_top_k]
         
         if len(chunks) <= self.rerank_top_k:
             print(f"No reranking needed: {len(chunks)} <= {self.rerank_top_k}")

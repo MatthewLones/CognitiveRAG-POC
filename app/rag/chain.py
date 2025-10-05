@@ -71,8 +71,16 @@ class RAGChain:
             
             # Step 2: Re-ranking
             reranking_applied = False
-            print(f"Chain reranking check: {len(retrieved_chunks)} chunks, rerank_top_k: {self.config['retrieval']['rerank_top_k']}")
-            if len(retrieved_chunks) > self.config['retrieval']['rerank_top_k']:
+            top_k = self.config['retrieval']['top_k']
+            rerank_top_k = self.config['retrieval']['rerank_top_k']
+            
+            print(f"Chain reranking check: {len(retrieved_chunks)} chunks, top_k: {top_k}, rerank_top_k: {rerank_top_k}")
+            
+            # Skip reranking if rerank_top_k equals top_k (naive RAG configuration)
+            if rerank_top_k == top_k:
+                print("Chain: Reranking disabled (rerank_top_k equals top_k)")
+                retrieved_chunks = retrieved_chunks[:rerank_top_k]  # Just truncate to desired size
+            elif len(retrieved_chunks) > rerank_top_k:
                 print("Chain: Applying reranking...")
                 retrieved_chunks = self.retriever.rerank(question, retrieved_chunks)
                 reranking_applied = True
