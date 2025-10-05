@@ -70,8 +70,15 @@ class RAGChain:
                 retrieved_chunks = self._retrieve_single_query(question)
             
             # Step 2: Re-ranking
+            reranking_applied = False
+            print(f"Chain reranking check: {len(retrieved_chunks)} chunks, rerank_top_k: {self.config['retrieval']['rerank_top_k']}")
             if len(retrieved_chunks) > self.config['retrieval']['rerank_top_k']:
+                print("Chain: Applying reranking...")
                 retrieved_chunks = self.retriever.rerank(question, retrieved_chunks)
+                reranking_applied = True
+                print(f"Chain: Reranking applied, now have {len(retrieved_chunks)} chunks")
+            else:
+                print("Chain: No reranking needed")
             
             # Step 3: Answerability check (if enabled)
             answerability_enabled = self.config.get('guardrails', {}).get('answerability_enabled', True)
@@ -129,7 +136,7 @@ class RAGChain:
                     "retrieved_chunks": len(retrieved_chunks),
                     "techniques_used": self._get_techniques_used(),
                     "self_check": answer_result.get('self_check', {}),
-                    "processing_metrics": self._get_processing_metrics(question, retrieved_chunks, answerability_result)
+                    "processing_metrics": self._get_processing_metrics(question, retrieved_chunks, answerability_result, reranking_applied)
                 }
             }
             
@@ -194,8 +201,11 @@ Return {self.max_subqueries} specific sub-queries, one per line:
         all_chunks = []
         chunk_ids = set()
         
-        for subquery in subqueries:
+        print(f"Multiple queries retrieval: {len(subqueries)} subqueries")
+        
+        for i, subquery in enumerate(subqueries):
             chunks = self.retriever.retrieve(subquery)
+            print(f"Subquery {i+1}: Retrieved {len(chunks)} chunks")
             
             # Deduplicate by chunk ID
             for chunk in chunks:
@@ -204,6 +214,8 @@ Return {self.max_subqueries} specific sub-queries, one per line:
                     all_chunks.append(chunk)
                     chunk_ids.add(chunk_id)
         
+        print(f"After deduplication: {len(all_chunks)} unique chunks")
+        
         # Sort by retrieval score
         all_chunks.sort(key=lambda x: x.get('retrieval_score', 0), reverse=True)
         
@@ -211,7 +223,9 @@ Return {self.max_subqueries} specific sub-queries, one per line:
     
     def _retrieve_single_query(self, question: str) -> List[Dict[str, Any]]:
         """Retrieve documents for single query"""
-        return self.retriever.retrieve(question)
+        chunks = self.retriever.retrieve(question)
+        print(f"Single query retrieval: {len(chunks)} chunks")
+        return chunks
     
     def _generate_answer(self, question: str, chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Generate answer using retrieved chunks"""
@@ -324,7 +338,7 @@ Return {self.max_subqueries} specific sub-queries, one per line:
         sorted_citations = sorted(citations, key=lambda x: x.get('score', 0), reverse=True)
         return sorted_citations[:dynamic_count]
     
-    def _get_processing_metrics(self, question: str, chunks: List[Dict[str, Any]], answerability_result: Dict) -> Dict[str, Any]:
+    def _get_processing_metrics(self, question: str, chunks: List[Dict[str, Any]], answerability_result: Dict, reranking_applied: bool = False) -> Dict[str, Any]:
         """Get actual processing metrics and data"""
         metrics = {
             "query_info": {
@@ -338,9 +352,13 @@ Return {self.max_subqueries} specific sub-queries, one per line:
                 "retrieval_method": self.config['retrieval']['fusion_method'],
                 "top_k": self.config['retrieval']['top_k'],
                 "rerank_top_k": self.config['retrieval']['rerank_top_k'],
-                "reranking_applied": len(chunks) > self.config['retrieval']['rerank_top_k'],
+                "reranking_applied": reranking_applied,
+                "reranking_method": "LLM" if reranking_applied else "None",
                 "bm25_weight": self.config['retrieval'].get('bm25_weight', 0.0),
-                "dense_weight": self.config['retrieval'].get('dense_weight', 1.0)
+                "dense_weight": self.config['retrieval'].get('dense_weight', 1.0),
+                "hybrid_retrieval": self.config['retrieval']['fusion_method'] != "dense_only",
+                "total_index_chunks": len(self.retriever.chunks),
+                "chunks_available_for_retrieval": len(self.retriever.chunks) >= self.config['retrieval']['top_k']
             },
             "prompt_fanning": {
                 "enabled": self.prompt_fanning_enabled,

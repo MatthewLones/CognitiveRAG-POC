@@ -17,8 +17,8 @@ prompt_fanning:
 
 # Strong guardrails
 guardrails:
-  answerability_threshold: 0.75
-  self_check_enabled: true
+  answerability_threshold: 0.20
+  self_check_enabled: false
   max_citations: 10  # Increased from 7
   dynamic_citations: true  # Enable dynamic citation scaling
 

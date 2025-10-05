@@ -6,6 +6,9 @@ import requests
 import json
 from typing import Dict, Any
 
+# API Configuration
+API_BASE_URL = "http://localhost:8000"
+
 # Page configuration
 st.set_page_config(
     page_title="Cognitive RAG POC",
@@ -148,72 +151,15 @@ if st.button("🔍 Query", type="primary", use_container_width=True):
                     st.markdown(result["answer"])
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    # Display processing data
-                    if "processing_metrics" in result.get("metadata", {}):
-                        metrics = result["metadata"]["processing_metrics"]
-                        
-                        # Show actual prompts and processing steps
-                        st.markdown("**🔧 Processing Data:**")
-                        
-                        # Retrieval method and chunks
-                        st.markdown(f"""
-                        <div class="prompt-section">
-                            <strong>Retrieval:</strong> {metrics['retrieval_metrics']['retrieval_method'].upper()}<br>
-                            <strong>Chunks Retrieved:</strong> {metrics['retrieval_metrics']['chunks_retrieved']}<br>
-                            <strong>Reranking Applied:</strong> {'Yes' if metrics['retrieval_metrics']['reranking_applied'] else 'No'}
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        # Prompt fanning
-                        if metrics['prompt_fanning']['enabled']:
-                            st.markdown(f"""
-                            <div class="prompt-section">
-                                <strong>Prompt Fanning:</strong> Enabled<br>
-                                <strong>Sub-queries Generated:</strong> {metrics['prompt_fanning']['subqueries_generated']}
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Show generated subqueries
-                            if metrics['prompt_fanning']['generated_subqueries']:
-                                st.markdown("**Generated Sub-queries:**")
-                                for i, subquery in enumerate(metrics['prompt_fanning']['generated_subqueries'], 1):
-                                    st.markdown(f"{i}. {subquery}")
-                            
-                            # Show decomposition prompt
-                            if metrics['prompt_fanning']['decomposition_prompt']:
-                                with st.expander("Decomposition Prompt"):
-                                    st.text(metrics['prompt_fanning']['decomposition_prompt'])
-                        
-                        # Guardrails
-                        st.markdown(f"""
-                        <div class="prompt-section">
-                            <strong>Answerability Check:</strong> {'Enabled' if metrics['guardrails']['answerability_enabled'] else 'Disabled'}<br>
-                            <strong>Self-Check:</strong> {'Enabled' if metrics['guardrails']['self_check_enabled'] else 'Disabled'}<br>
-                            <strong>Dynamic Citations:</strong> {'Enabled' if metrics['guardrails']['dynamic_citations'] else 'Disabled'}
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        # Chunk scores
-                        if metrics['chunk_scores']:
-                            st.markdown("**📊 Chunk Scores:**")
-                            for chunk in metrics['chunk_scores'][:3]:  # Show top 3
-                                st.markdown(f"- {chunk['chunk_id']}: {chunk['retrieval_score']:.3f} ({chunk['source']})")
-                        
-                        # Show actual prompts used
-                        if metrics.get('prompts_used', {}).get('answer_prompt'):
-                            with st.expander("Answer Generation Prompt"):
-                                st.text(metrics['prompts_used']['answer_prompt'])
-                        
-                        # Raw JSON data
-                        with st.expander("Raw Processing Data"):
-                            st.json(metrics)
                     
                     # Citations
                     if result["citations"]:
                         st.markdown(f"**📚 Citations ({len(result['citations'])}):**")
-                        for i, citation in enumerate(result["citations"][:3]):  # Show top 3
-                            st.markdown(f"{i+1}. {citation.get('text', '')[:100]}...")
-                            st.markdown(f"   *Source: {citation.get('source', 'Unknown')}*")
+                        for i, citation in enumerate(result["citations"][:5]):  # Show top 5
+                            st.markdown(f"**{i+1}.** {citation.get('text', '')[:150]}...")
+                            st.markdown(f"   *Source: {citation.get('source', 'Unknown')} | Chunk ID: {citation.get('chunk_id', 'N/A')} | Score: {citation.get('score', 0.0):.3f}*")
+                            st.markdown("")  # Add spacing
+                    
                 
                 else:
                     st.error(f"API Error: {response.status_code} - {response.text}")

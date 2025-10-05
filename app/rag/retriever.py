@@ -61,6 +61,22 @@ class HybridRetriever:
         self._build_dense_index()
         
         print(f"Built indices for {len(chunks)} chunks")
+        self._print_index_stats()
+    
+    def _print_index_stats(self):
+        """Print index statistics for debugging"""
+        print(f"📊 Index Statistics:")
+        print(f"   Total chunks: {len(self.chunks)}")
+        print(f"   BM25 index: {'✅ Built' if self.bm25_index is not None else '❌ Failed'}")
+        print(f"   Dense index: {'✅ Built' if self.dense_index is not None else '❌ Failed'}")
+        print(f"   Config top_k: {self.top_k}")
+        print(f"   Config rerank_top_k: {self.rerank_top_k}")
+        
+        if len(self.chunks) < self.top_k:
+            print(f"⚠️  WARNING: Index only has {len(self.chunks)} chunks but top_k is {self.top_k}")
+            print(f"   This means you can only retrieve {len(self.chunks)} chunks maximum")
+        else:
+            print(f"✅ Index has sufficient chunks for top_k={self.top_k} retrieval")
     
     def _build_bm25_index(self):
         """Build BM25 sparse retrieval index"""
@@ -158,14 +174,29 @@ class HybridRetriever:
         if top_k is None:
             top_k = self.top_k
         
+        print(f"Retriever: Retrieving with top_k={top_k}, fusion_method={self.fusion_method}")
+        
         # Get BM25 results
         bm25_results = self._bm25_search(query, top_k)
+        print(f"Retriever: BM25 returned {len(bm25_results)} results")
         
         # Get dense results
         dense_results = self._dense_search(query, top_k)
+        print(f"Retriever: Dense returned {len(dense_results)} results")
         
         # Fuse results
         fused_results = self._fuse_results(bm25_results, dense_results, top_k)
+        print(f"Retriever: Fused results: {len(fused_results)} chunks")
+        
+        # Verification: Check if we got the expected number of chunks
+        if len(fused_results) < top_k:
+            print(f"⚠️  WARNING: Expected {top_k} chunks but only got {len(fused_results)}")
+            print(f"   This could be due to:")
+            print(f"   - Index only contains {len(self.chunks)} total chunks")
+            print(f"   - BM25 index issues: {len(bm25_results)} results")
+            print(f"   - Dense index issues: {len(dense_results)} results")
+        else:
+            print(f"✅ Successfully retrieved {len(fused_results)} chunks (expected {top_k})")
         
         return fused_results
     
@@ -177,6 +208,8 @@ class HybridRetriever:
         try:
             # Tokenize query
             query_tokens = query.split()
+
+            print(f"BM25 Searching")
             
             # Get BM25 scores
             scores = self.bm25_index.get_scores(query_tokens)
@@ -281,12 +314,17 @@ class HybridRetriever:
         """
         Re-rank chunks using LLM or cross-encoder
         """
+        print(f"Reranking: {len(chunks)} chunks, rerank_top_k: {self.rerank_top_k}")
+        
         if len(chunks) <= self.rerank_top_k:
+            print(f"No reranking needed: {len(chunks)} <= {self.rerank_top_k}")
             return chunks
         
+        print(f"Applying LLM reranking to {len(chunks)} chunks...")
         try:
             # Use LLM for re-ranking
             reranked_chunks = self._llm_rerank(query, chunks)
+            print(f"LLM reranking completed, returning top {self.rerank_top_k} chunks")
             return reranked_chunks[:self.rerank_top_k]
             
         except Exception as e:
@@ -294,6 +332,7 @@ class HybridRetriever:
             return chunks[:self.rerank_top_k]
     
     def _llm_rerank(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        print(f"LLM re-ranking...")
         """Re-rank using LLM"""
         try:
             import openai
@@ -335,6 +374,25 @@ Example: 3,1,5,2,4
         except Exception as e:
             print(f"Error in LLM re-ranking: {e}")
             return chunks
+    
+    def test_retrieval(self, query: str = "test query"):
+        """Test method to verify retrieval is working correctly"""
+        print(f"\n🧪 Testing retrieval with query: '{query}'")
+        print(f"   Requesting {self.top_k} chunks...")
+        
+        results = self.retrieve(query)
+        
+        print(f"   Results: {len(results)} chunks retrieved")
+        print(f"   Expected: {self.top_k} chunks")
+        
+        if len(results) == self.top_k:
+            print(f"   ✅ SUCCESS: Retrieved exactly {self.top_k} chunks")
+        elif len(results) < self.top_k:
+            print(f"   ⚠️  WARNING: Only retrieved {len(results)} chunks (expected {self.top_k})")
+        else:
+            print(f"   ❓ UNEXPECTED: Retrieved {len(results)} chunks (expected {self.top_k})")
+        
+        return results
 
 # Example usage
 if __name__ == "__main__":
