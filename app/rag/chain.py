@@ -81,7 +81,6 @@ class RAGChain:
                 print("Chain: Reranking disabled (rerank_top_k equals top_k)")
                 retrieved_chunks = retrieved_chunks[:rerank_top_k]  # Just truncate to desired size
             elif len(retrieved_chunks) > rerank_top_k:
-                print("Chain: Applying reranking...")
                 retrieved_chunks = self.retriever.rerank(question, retrieved_chunks)
                 reranking_applied = True
                 print(f"Chain: Reranking applied, now have {len(retrieved_chunks)} chunks")

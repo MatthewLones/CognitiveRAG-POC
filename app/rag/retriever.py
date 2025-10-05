@@ -322,7 +322,6 @@ class HybridRetriever:
         """
         Re-rank chunks using LLM or cross-encoder
         """
-        print(f"Reranking: {len(chunks)} chunks, top_k: {self.top_k}, rerank_top_k: {self.rerank_top_k}")
         
         # Skip reranking if rerank_top_k equals top_k (naive RAG configuration)
         if self.rerank_top_k == self.top_k:
@@ -332,7 +331,7 @@ class HybridRetriever:
             print(f"No reranking needed: {len(chunks)} <= {self.rerank_top_k}")
             return chunks
         
-        print(f"Applying LLM reranking to {len(chunks)} chunks...")
+        print(f"Applying LLM reranking from {len(chunks)} chunks to 5 chunks. ")
         try:
             # Use LLM for re-ranking
             reranked_chunks = self._llm_rerank(query, chunks)
