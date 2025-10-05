@@ -36,20 +36,22 @@ st.markdown("""
         margin: 2rem 0;
     }
     .answer-box {
-        background-color: #f8f9fa;
+        background-color: transparent;
         padding: 1.5rem;
         border-radius: 0.75rem;
-        border: 1px solid #e9ecef;
+        border: none;
         margin: 1rem 0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        box-shadow: none;
     }
     .prompt-section {
-        background-color: #f1f8ff;
+        background-color: #2c3e50;
         padding: 1rem;
         border-radius: 0.5rem;
         margin: 0.5rem 0;
         border-left: 4px solid #4a90e2;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        color: #ecf0f1 !important;
+        font-weight: 500;
     }
     .stTextArea textarea {
         border-radius: 0.5rem !important;
