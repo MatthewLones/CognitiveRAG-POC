@@ -32,7 +32,7 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     citations: List[dict]
-    confidence: float
+    confidence: Optional[float]
     groundedness: str
     metadata: dict
 

@@ -98,7 +98,8 @@ class RAGChain:
                     "answerable": True,
                     "reasoning": "Answerability check disabled for naive RAG",
                     "available_info": "All retrieved chunks",
-                    "missing_info": "None"
+                    "missing_info": "None",
+                    "confidence": None  # Explicitly set confidence to None for disabled answerability
                 }
             
             # Step 4: Generate answer
@@ -132,9 +133,8 @@ class RAGChain:
                 }
             }
             
-            # Only add confidence if answerability check was performed
-            if answerability_result.get('confidence') is not None:
-                response["confidence"] = answerability_result['confidence']
+            # Always include confidence field (None for disabled answerability)
+            response["confidence"] = answerability_result.get('confidence')
             
             return response
             
