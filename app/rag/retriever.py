@@ -127,11 +127,10 @@ class HybridRetriever:
             self.dense_index = faiss.IndexFlatIP(embedding_dim)  # Inner product for cosine similarity
             print("FAISS index created successfully")
             
-            # Normalize embeddings for cosine similarity BEFORE adding to index
-            print("Starting L2 normalization...")
-            print("This may take a moment for large embedding arrays...")
-            faiss.normalize_L2(embeddings)
-            print("L2 normalization completed")
+            # Manual L2 normalization (avoiding FAISS normalize_L2 bug on Mac M2)
+            print("Performing manual L2 normalization... (This is because the FAISS normalize_L2 bug on Mac M2)")
+            embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+            print("Manual L2 normalization completed")
             
             # Add embeddings to index
             print("Adding embeddings to FAISS index...")
@@ -201,8 +200,8 @@ class HybridRetriever:
             # Create query embedding
             query_embedding = model.encode([query])
             
-            # Normalize for cosine similarity
-            faiss.normalize_L2(query_embedding)
+            # Manual normalization for query embedding (matching index normalization)
+            query_embedding = query_embedding / np.linalg.norm(query_embedding, axis=1, keepdims=True)
             
             # Search
             scores, indices = self.dense_index.search(query_embedding, top_k)
