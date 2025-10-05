@@ -4,6 +4,11 @@ Guardrails and safety measures for Cognitive RAG POC
 from typing import List, Dict, Any, Tuple
 import yaml
 import json
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class GuardrailManager:
     """Manages answerability checks, self-verification, and safety measures"""

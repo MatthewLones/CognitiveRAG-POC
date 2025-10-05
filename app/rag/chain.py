@@ -3,9 +3,14 @@ RAG pipeline orchestration for Cognitive RAG POC
 """
 from typing import List, Dict, Any, Optional
 import yaml
+import os
+from dotenv import load_dotenv
 from .retriever import HybridRetriever
 from .prompts import PromptManager
 from .guardrails import GuardrailManager
+
+# Load environment variables
+load_dotenv()
 
 class RAGChain:
     """Main RAG pipeline orchestrator"""

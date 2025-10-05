@@ -32,6 +32,6 @@ guardrails:
 
 # Performance
 performance:
-  max_tokens: 4000
+  max_tokens: 4000  # GPT-4 turbo limit is 4096
   temperature: 0.1
   timeout: 30

@@ -4,7 +4,12 @@ Hybrid retrieval system for Cognitive RAG POC
 import numpy as np
 from typing import List, Dict, Any, Tuple
 import yaml
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class HybridRetriever:
     """Implements hybrid retrieval with BM25 + Dense embeddings + Re-ranking"""
