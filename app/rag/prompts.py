@@ -48,8 +48,14 @@ Instructions:
 1. Answer the question based ONLY on the information provided in the context
 2. If the context doesn't contain enough information, say so clearly
 3. Include specific citations by referencing "Document 1", "Document 2", etc.
-4. Be concise but complete in your answer
-5. If you're unsure about something, express that uncertainty
+4. Structure your answer clearly with proper formatting:
+   - Use bullet points for lists
+   - Use **bold** for key terms
+   - Use *italics* for emphasis
+   - Use numbered lists for steps or sequences
+5. Be concise but complete in your answer
+6. If you're unsure about something, express that uncertainty
+7. Format your response for easy reading with proper markdown
 
 Answer:"""
     

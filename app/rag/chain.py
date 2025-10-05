@@ -73,22 +73,32 @@ class RAGChain:
             if len(retrieved_chunks) > self.config['retrieval']['rerank_top_k']:
                 retrieved_chunks = self.retriever.rerank(question, retrieved_chunks)
             
-            # Step 3: Answerability check
-            answerability_result = self.guardrail_manager.check_answerability(
-                question, retrieved_chunks
-            )
-            
-            if not answerability_result['answerable']:
-                return {
-                    "answer": "I don't have sufficient information to answer this question based on the available documents.",
-                    "citations": [],
-                    "confidence": 0.0,
-                    "groundedness": "ungrounded",
-                    "metadata": {
-                        "answerability": answerability_result,
-                        "retrieved_chunks": len(retrieved_chunks),
-                        "techniques_used": self._get_techniques_used()
+            # Step 3: Answerability check (if enabled)
+            answerability_enabled = self.config.get('guardrails', {}).get('answerability_enabled', True)
+            if answerability_enabled:
+                answerability_result = self.guardrail_manager.check_answerability(
+                    question, retrieved_chunks
+                )
+                
+                if not answerability_result['answerable']:
+                    return {
+                        "answer": "I don't have sufficient information to answer this question based on the available documents.",
+                        "citations": [],
+                        "confidence": 0.0,
+                        "groundedness": "ungrounded",
+                        "metadata": {
+                            "answerability": answerability_result,
+                            "retrieved_chunks": len(retrieved_chunks),
+                            "techniques_used": self._get_techniques_used()
+                        }
                     }
+            else:
+                # Skip answerability check for naive RAG
+                answerability_result = {
+                    "answerable": True,
+                    "reasoning": "Answerability check disabled for naive RAG",
+                    "available_info": "All retrieved chunks",
+                    "missing_info": "None"
                 }
             
             # Step 4: Generate answer
@@ -103,18 +113,28 @@ class RAGChain:
                 answer_result['groundedness'] = self_check_result['groundedness']
             
             # Step 6: Format response
+            citations = self._format_citations(retrieved_chunks)
+            
+            # Apply dynamic citation scaling if enabled
+            if self.config.get('guardrails', {}).get('dynamic_citations', False):
+                citations = self._apply_dynamic_citations(citations, answerability_result.get('confidence'))
+            
             response = {
                 "answer": answer_result['answer'],
-                "citations": self._format_citations(retrieved_chunks),
-                "confidence": answerability_result['confidence'],
+                "citations": citations,
                 "groundedness": answer_result.get('groundedness', 'partially_grounded'),
                 "metadata": {
                     "answerability": answerability_result,
                     "retrieved_chunks": len(retrieved_chunks),
                     "techniques_used": self._get_techniques_used(),
-                    "self_check": answer_result.get('self_check', {})
+                    "self_check": answer_result.get('self_check', {}),
+                    "processing_metrics": self._get_processing_metrics(question, retrieved_chunks, answerability_result)
                 }
             }
+            
+            # Only add confidence if answerability check was performed
+            if answerability_result.get('confidence') is not None:
+                response["confidence"] = answerability_result['confidence']
             
             return response
             
@@ -144,6 +164,9 @@ Sub-query types to consider: {', '.join(subquery_types)}
 Return {self.max_subqueries} specific sub-queries, one per line:
 """
             
+            # Store the prompt for display
+            self.decomposition_prompt = prompt
+            
             response = openai.chat.completions.create(
                 model=self.config['models']['llm_model'],
                 messages=[{"role": "user", "content": prompt}],
@@ -156,6 +179,9 @@ Return {self.max_subqueries} specific sub-queries, one per line:
             
             # Add original question
             subqueries.insert(0, question)
+            
+            # Store the generated subqueries for display
+            self.generated_subqueries = subqueries[:self.max_subqueries]
             
             return subqueries[:self.max_subqueries]
             
@@ -207,6 +233,9 @@ Return {self.max_subqueries} specific sub-queries, one per line:
                 context=context,
                 max_citations=self.config.get('guardrails', {}).get('max_citations', 5)
             )
+            
+            # Store the prompt for display
+            self.answer_prompt = prompt
             
             # Generate answer
             response = openai.chat.completions.create(
@@ -265,6 +294,123 @@ Return {self.max_subqueries} specific sub-queries, one per line:
         for key, value in config_override.items():
             if key in self.config:
                 self.config[key] = value
+    
+    def _apply_dynamic_citations(self, citations: List[Dict[str, Any]], confidence: float = None) -> List[Dict[str, Any]]:
+        """Apply dynamic citation scaling based on confidence and quality"""
+        if not citations:
+            return citations
+        
+        # Base number of citations
+        base_citations = self.config.get('guardrails', {}).get('max_citations', 5)
+        
+        # Scale based on confidence (higher confidence = more citations)
+        if confidence is not None:
+            confidence_multiplier = 0.5 + (confidence * 0.5)  # Range: 0.5 to 1.0
+        else:
+            confidence_multiplier = 1.0  # Default when no confidence available
+        
+        # Scale based on citation quality (higher scores = more citations)
+        if citations:
+            avg_score = sum(c.get('score', 0) for c in citations) / len(citations)
+            quality_multiplier = 0.7 + (avg_score * 0.3)  # Range: 0.7 to 1.0
+        else:
+            quality_multiplier = 1.0
+        
+        # Calculate dynamic citation count
+        dynamic_count = int(base_citations * confidence_multiplier * quality_multiplier)
+        dynamic_count = max(3, min(dynamic_count, len(citations)))  # Between 3 and all available
+        
+        # Sort by score and return top citations
+        sorted_citations = sorted(citations, key=lambda x: x.get('score', 0), reverse=True)
+        return sorted_citations[:dynamic_count]
+    
+    def _get_processing_metrics(self, question: str, chunks: List[Dict[str, Any]], answerability_result: Dict) -> Dict[str, Any]:
+        """Get actual processing metrics and data"""
+        metrics = {
+            "query_info": {
+                "original_question": question,
+                "question_length": len(question.split()),
+                "question_type": self._classify_question_type(question),
+                "complexity": self._assess_question_complexity(question)
+            },
+            "retrieval_metrics": {
+                "chunks_retrieved": len(chunks),
+                "retrieval_method": self.config['retrieval']['fusion_method'],
+                "top_k": self.config['retrieval']['top_k'],
+                "rerank_top_k": self.config['retrieval']['rerank_top_k'],
+                "reranking_applied": len(chunks) > self.config['retrieval']['rerank_top_k'],
+                "bm25_weight": self.config['retrieval'].get('bm25_weight', 0.0),
+                "dense_weight": self.config['retrieval'].get('dense_weight', 1.0)
+            },
+            "prompt_fanning": {
+                "enabled": self.prompt_fanning_enabled,
+                "max_subqueries": self.max_subqueries if self.prompt_fanning_enabled else 0,
+                "subqueries_generated": len(getattr(self, 'generated_subqueries', [])),
+                "generated_subqueries": getattr(self, 'generated_subqueries', []),
+                "decomposition_prompt": getattr(self, 'decomposition_prompt', None)
+            },
+            "guardrails": {
+                "answerability_enabled": self.config.get('guardrails', {}).get('answerability_enabled', True),
+                "answerability_threshold": self.config.get('guardrails', {}).get('answerability_threshold', 0.7),
+                "self_check_enabled": self.config.get('guardrails', {}).get('self_check_enabled', False),
+                "max_citations": self.config.get('guardrails', {}).get('max_citations', 5),
+                "dynamic_citations": self.config.get('guardrails', {}).get('dynamic_citations', False)
+            },
+            "answerability_result": answerability_result,
+            "chunk_scores": [
+                {
+                    "chunk_id": chunk.get('metadata', {}).get('chunk_id', f"chunk_{i}"),
+                    "retrieval_score": chunk.get('retrieval_score', 0.0),
+                    "source": chunk.get('metadata', {}).get('source', 'unknown'),
+                    "content_length": len(chunk.get('content', ''))
+                }
+                for i, chunk in enumerate(chunks)
+            ],
+            "techniques_used": self._get_techniques_used(),
+            "config_used": {
+                "config_name": getattr(self, 'config_name', 'unknown'),
+                "model": self.config['models']['llm_model'],
+                "embedding_model": self.config['models']['embedding_model']
+            },
+            "prompts_used": {
+                "answer_prompt": getattr(self, 'answer_prompt', None),
+                "decomposition_prompt": getattr(self, 'decomposition_prompt', None)
+            }
+        }
+        
+        return metrics
+    
+    def _classify_question_type(self, question: str) -> str:
+        """Classify the type of question"""
+        question_lower = question.lower()
+        
+        if any(word in question_lower for word in ['what', 'define', 'definition']):
+            return 'definition'
+        elif any(word in question_lower for word in ['how', 'steps', 'process']):
+            return 'procedural'
+        elif any(word in question_lower for word in ['why', 'reason', 'because']):
+            return 'explanatory'
+        elif any(word in question_lower for word in ['when', 'time', 'date']):
+            return 'temporal'
+        elif any(word in question_lower for word in ['where', 'location', 'place']):
+            return 'locational'
+        elif any(word in question_lower for word in ['list', 'examples', 'types']):
+            return 'enumerative'
+        else:
+            return 'general'
+    
+    def _assess_question_complexity(self, question: str) -> str:
+        """Assess the complexity of the question"""
+        word_count = len(question.split())
+        question_markers = question.count('?')
+        conjunction_count = sum(1 for word in question.lower().split() if word in ['and', 'or', 'but', 'however'])
+        
+        if word_count > 20 or question_markers > 1 or conjunction_count > 2:
+            return 'complex'
+        elif word_count > 10 or conjunction_count > 1:
+            return 'moderate'
+        else:
+            return 'simple'
 
 # Example usage
 if __name__ == "__main__":

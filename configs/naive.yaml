@@ -14,8 +14,10 @@ prompt_fanning:
   enabled: false
 
 guardrails:
-  answerability_threshold: 0.5
+  answerability_threshold: 0.0  # Disable answerability check
   self_check_enabled: false
+  answerability_enabled: false  # Completely disable answerability guardrails
+  max_citations: 8  # Increased from 5
 
 # Simple chunking
 chunking:
