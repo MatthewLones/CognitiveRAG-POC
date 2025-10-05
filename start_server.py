@@ -93,7 +93,7 @@ def main():
         print("   Or use a process manager like PM2 for production")
         
         # For demo purposes, start backend first
-        print("\n1️⃣  Starting backend first...")
+        print("\n Starting backend first...")
         print("   Press Ctrl+C to stop backend, then start frontend separately")
         start_backend()
     else:

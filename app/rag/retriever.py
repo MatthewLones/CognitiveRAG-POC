@@ -88,6 +88,7 @@ class HybridRetriever:
             # Extract embeddings and determine dimension
             embeddings = []
             embedding_dim = None
+            print("Building dense index...")
             
             for chunk in self.chunks:
                 if "embedding" in chunk and chunk["embedding"]:
@@ -106,19 +107,36 @@ class HybridRetriever:
                 
             # Use actual embedding dimension
             if embedding_dim is None:
-                embedding_dim = 384  # Fallback for all-MiniLM-L6-v2
+                # Try to get dimension from config or default to 384
+                try:
+                    from sentence_transformers import SentenceTransformer
+                    model_name = self.config['models']['embedding_model']
+                    model = SentenceTransformer(model_name)
+                    embedding_dim = model.get_sentence_embedding_dimension()
+                except:
+                    embedding_dim = 384  # Fallback for all-MiniLM-L6-v2
+
+            print("Building dense index... with embedding dimension:", embedding_dim)
+            
             
             # Convert to numpy array
             embeddings = np.array(embeddings).astype('float32')
+            print(f"Converted embeddings to numpy array: shape={embeddings.shape}, dtype={embeddings.dtype}")
             
             # Build FAISS index with dynamic dimension
             self.dense_index = faiss.IndexFlatIP(embedding_dim)  # Inner product for cosine similarity
+            print("FAISS index created successfully")
             
-            # Normalize embeddings for cosine similarity
+            # Normalize embeddings for cosine similarity BEFORE adding to index
+            print("Starting L2 normalization...")
+            print("This may take a moment for large embedding arrays...")
             faiss.normalize_L2(embeddings)
+            print("L2 normalization completed")
             
             # Add embeddings to index
+            print("Adding embeddings to FAISS index...")
             self.dense_index.add(embeddings)
+            print("Embeddings added to index successfully")
             
             print("Dense vector index built successfully")
             
@@ -323,7 +341,7 @@ if __name__ == "__main__":
         {
             "content": "The Well-Architected Framework provides guidance to help you build secure, high-performing, resilient, and efficient infrastructure for your applications.",
             "metadata": {"source": "test.pdf", "chunk_id": "0"},
-            "embedding": [0.1] * 1536
+            "embedding": [0.1] * 384  # all-MiniLM-L6-v2 dimension
         }
     ]
     
